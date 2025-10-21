@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Check-in/Check-out Georreferenciado</title>
+    
+    <!-- Tailwind CSS para um design moderno e responsivo -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- O Google Maps será carregado via JavaScript -->
+    
+    <style>
+        /* Garante que o mapa tenha uma altura definida para ser exibido */
+        #map { height: 220px; border-radius: 0.5rem; }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4 font-sans">
+
+    <!-- Tela de Login (Visível por Padrão) -->
+    <div id="login-screen" class="bg-white p-6 md:p-8 rounded-2xl shadow-2xl w-full max-w-md space-y-6">
+        <div class="text-center">
+            <h1 class="text-2xl md:text-3xl font-bold text-gray-800">Acessar Sistema</h1>
+            <p class="text-gray-600 mt-1">Use o seu e-mail do Bitrix24</p>
+        </div>
+        <div id="login-status" class="text-center"></div>
+        <div class="space-y-4">
+            <div>
+                <label for="user-email" class="block text-sm font-medium text-gray-700 mb-1">Seu E-mail:</label>
+                <input type="email" id="user-email" class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-600" placeholder="seu.email@empresa.com">
+            </div>
+        </div>
+        <button id="loginBtn" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg shadow-lg hover:bg-blue-700 transition-transform transform hover:scale-105">
+            Entrar
+        </button>
+    </div>
+
+    <!-- App Principal (Oculto por Padrão) -->
+    <div id="main-app" class="bg-white p-6 md:p-8 rounded-2xl shadow-2xl w-full max-w-md space-y-6 hidden">
+        
+        <div class="text-center">
+            <h1 class="text-2xl md:text-3xl font-bold text-gray-800">Registo de Ponto</h1>
+            <p class="text-gray-600 mt-1">com Georreferenciamento</p>
+        </div>
+        
+        <div id="datetime-container" class="text-center bg-gray-100 p-3 rounded-lg">
+            <p class="text-lg font-semibold text-gray-700" id="current-time"></p>
+            <p class="text-sm text-gray-500" id="current-date"></p>
+        </div>
+
+        <div id="status" class="text-center bg-blue-100 text-blue-700 p-3 rounded-lg">
+            A obter a sua localização, por favor aguarde...
+        </div>
+
+        <div id="map-container" class="hidden">
+            <div id="map"></div>
+        </div>
+
+        <div id="coords-container" class="hidden text-center text-sm text-gray-600 space-y-1">
+            <p><strong>Latitude:</strong> <span id="latitude" class="font-mono">--</span></p>
+            <p><strong>Longitude:</strong> <span id="longitude" class="font-mono">--</span></p>
+        </div>
+
+        <!-- Formulário de Endereço Manual (Oculto por Padrão) -->
+        <div id="manual-address-container" class="hidden space-y-4 border-t pt-4 mt-4">
+            <h3 class="text-lg font-semibold text-yellow-800 bg-yellow-100 text-center p-2 rounded-lg">Precisão Baixa</h3>
+            <p class="text-sm text-center text-gray-600">Não foi possível obter um sinal de GPS preciso. Por favor, insira o endereço atual para continuar.</p>
+            <div>
+                <label for="manual-address" class="block text-sm font-medium text-gray-700">Endereço Atual:</label>
+                <input type="text" id="manual-address" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm" placeholder="Ex: Av. Paulista, 1000, São Paulo">
+            </div>
+            <button id="confirmAddressBtn" class="w-full bg-yellow-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-600">Confirmar Endereço</button>
+        </div>
+
+        <!-- Sugestões de Locais do Google (Oculto até obter localização) -->
+        <div id="places-suggestions-container" class="hidden space-y-2 pt-4 border-t">
+            <h4 class="text-md font-semibold text-gray-700 text-center">Sugestões de Locais Próximos:</h4>
+            <div id="places-suggestions" class="max-h-48 overflow-y-auto space-y-2 p-1">
+                <!-- As sugestões serão populadas aqui via JavaScript -->
+            </div>
+        </div>
+        
+        <div class="space-y-4">
+             <div>
+                <label for="user-id" class="block text-sm font-medium text-gray-700 mb-1">ID do Utilizador (Bitrix24):</label>
+                <input type="text" id="user-id" readonly class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm bg-gray-100 cursor-not-allowed">
+            </div>
+        </div>
+        
+        <!-- Formulário de Detalhes da Visita (Oculto até ao Check-in) -->
+        <div id="visit-details-form" class="hidden space-y-4 border-t pt-4 mt-4">
+            <h3 class="text-lg font-semibold text-gray-700 text-center">Detalhes da Visita</h3>
+            <div>
+                <label for="establishment-name" class="block text-sm font-medium text-gray-700">Nome do Estabelecimento:</label>
+                <input type="text" id="establishment-name" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm">
+            </div>
+            <div>
+                <label for="contact-type" class="block text-sm font-medium text-gray-700">Tipo de Contato:</label>
+                <select id="contact-type" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm bg-white">
+                    <option>Chef de Cozinha</option>
+                    <option>Comprador(a)</option>
+                    <option>Gerente</option>
+                    <option>Garçom</option>
+                    <option>Outro</option>
+                </select>
+            </div>
+            <div>
+                <label for="contact-name" class="block text-sm font-medium text-gray-700">Nome do Contato:</label>
+                <input type="text" id="contact-name" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm">
+            </div>
+            <div>
+                <label for="contact-phone" class="block text-sm font-medium text-gray-700">Telefone do Contato:</label>
+                <input type="tel" id="contact-phone" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm">
+            </div>
+            <div>
+                <label for="contact-email" class="block text-sm font-medium text-gray-700">E-mail do Contato:</label>
+                <input type="email" id="contact-email" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm">
+            </div>
+        </div>
+        
+        <!-- AVISO DE PRECISÃO -->
+        <div class="text-xs text-center text-gray-500 bg-gray-50 p-2 rounded-md">
+            <p><strong>Dica:</strong> Para máxima precisão, utilize este aplicativo num dispositivo móvel com os serviços de localização (GPS) ativados.</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <button id="checkinBtn" disabled class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg shadow-lg hover:bg-green-700 transition-transform transform hover:scale-105 disabled:bg-gray-300 disabled:cursor-not-allowed">
+                Check-in
+            </button>
+            <button id="checkoutBtn" disabled class="w-full bg-red-600 text-white font-bold py-3 px-4 rounded-lg shadow-lg hover:bg-red-700 transition-transform transform hover:scale-105 disabled:bg-gray-300 disabled:cursor-not-allowed">
+                Check-out
+            </button>
+        </div>
+    </div>
+
+    <!-- Tela de Visita Concluída (Oculta por Padrão) -->
+    <div id="concluded-screen" class="bg-white p-6 md:p-8 rounded-2xl shadow-2xl w-full max-w-md space-y-6 hidden text-center">
+        <svg class="mx-auto h-16 w-16 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <h2 class="text-2xl font-bold text-gray-800">Visita Concluída com Sucesso!</h2>
+        <p class="text-gray-600">O seu check-out foi registado. Pode iniciar uma nova visita a qualquer momento.</p>
+        <button id="newVisitBtn" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg shadow-lg hover:bg-blue-700 transition-transform transform hover:scale-105">
+            Iniciar Nova Visita
+        </button>
+    </div>
+
+    <script>
+        // --- CONFIGURAÇÕES IMPORTANTES ---
+        // 1. Webhook do Bitrix24 (com permissões: user, tasks.task.*, crm)
+        const WEBHOOK_BASE_URL = "https://vpj.bitrix24.com.br/rest/1915/jeq2gdk5gx5vati5/"; 
+        // 2. Chave de API do Google Maps (agora usada para o mapa principal e para buscar locais)
+        const GOOGLE_MAPS_API_KEY = "AIzaSyB1j8XnAcZCjYWKB-IwI3wQ0JVhPj4WtIo";
+        // ------------------------------------
+
+        // --- Elementos do DOM ---
+        const loginScreen = document.getElementById('login-screen');
+        const mainApp = document.getElementById('main-app');
+        const concludedScreen = document.getElementById('concluded-screen');
+        const visitDetailsForm = document.getElementById('visit-details-form');
+        const manualAddressContainer = document.getElementById('manual-address-container');
+        const confirmAddressBtn = document.getElementById('confirmAddressBtn');
+        const newVisitBtn = document.getElementById('newVisitBtn');
+        const userEmailInput = document.getElementById('user-email');
+        const loginBtn = document.getElementById('loginBtn');
+        const loginStatus = document.getElementById('login-status');
+        const statusEl = document.getElementById('status');
+        const mapContainer = document.getElementById('map-container');
+        const latitudeEl = document.getElementById('latitude');
+        const longitudeEl = document.getElementById('longitude');
+        const checkinBtn = document.getElementById('checkinBtn');
+        const checkoutBtn = document.getElementById('checkoutBtn');
+        const userIdInput = document.getElementById('user-id');
+        const timeEl = document.getElementById('current-time');
+        const dateEl = document.getElementById('current-date');
+        const placesSuggestionsContainer = document.getElementById('places-suggestions-container');
+        const placesSuggestions = document.getElementById('places-suggestions');
+        
+        let currentPosition = null; // Posição final usada (pode ser do GPS ou do endereço)
+        let trackedPosition = null; // Posição imprecisa do GPS (para auditoria)
+        let manualPosition = null;  // Posição do endereço manual (para auditoria)
+        let map = null;
+        let marker = null;
+        let accuracyCircle = null;
+        let clockInterval = null;
+        let googleMapsApiLoaded = false;
+        let watchId = null;
+        let bestAccuracy = Infinity;
+        let locationTimeout = null;
+
+        // --- Funções de Inicialização ---
+        function loadGoogleMapsAPI() {
+            if (GOOGLE_MAPS_API_KEY === "COLE_AQUI_SUA_CHAVE_DE_API_DO_GOOGLE_MAPS" || !GOOGLE_MAPS_API_KEY) {
+                console.warn("Chave de API do Google Maps não configurada.");
+                return;
+            }
+            const script = document.createElement('script');
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places,geocoding&callback=initGoogleMaps`;
+            script.async = true;
+            script.defer = true;
+            document.head.appendChild(script);
+        }
+        
+        window.initGoogleMaps = function() {
+            googleMapsApiLoaded = true;
+            console.log("Google Maps API carregada com sucesso.");
+        }
+
+        // --- Funções de Data e Hora ---
+        function updateClock() {
+            const now = new Date();
+            const timeOptions = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+            const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            
+            timeEl.textContent = now.toLocaleTimeString('pt-BR', timeOptions);
+            dateEl.textContent = now.toLocaleDateString('pt-BR', dateOptions);
+        }
+
+        // --- Funções de Lógica de Visita ---
+        function getVisitCounter(userId) {
+            const now = new Date();
+            const currentMonth = now.getMonth();
+            const storageKey = `visitCounter_${userId}`;
+            let counterData = JSON.parse(localStorage.getItem(storageKey)) || { count: 0, month: -1 };
+
+            if (counterData.month !== currentMonth) {
+                counterData = { count: 1, month: currentMonth };
+            } else {
+                counterData.count++;
+            }
+            localStorage.setItem(storageKey, JSON.stringify(counterData));
+            return counterData.count;
+        }
+
+        function getEstablishmentReturnCounter(userId, establishmentName) {
+            if (!establishmentName) return 1;
+            const now = new Date();
+            const currentMonth = now.getMonth();
+            const sanitizedName = establishmentName.toLowerCase().replace(/\s+/g, '_');
+            const storageKey = `establishmentCounter_${userId}_${sanitizedName}`;
+            let counterData = JSON.parse(localStorage.getItem(storageKey)) || { count: 0, month: -1 };
+
+            if (counterData.month !== currentMonth) {
+                counterData = { count: 1, month: currentMonth };
+            } else {
+                counterData.count++;
+            }
+            localStorage.setItem(storageKey, JSON.stringify(counterData));
+            return counterData.count;
+        }
+
+        function getMonthName() {
+            const month = new Date().toLocaleString('pt-BR', { month: 'long' });
+            return month.charAt(0).toUpperCase() + month.slice(1);
+        }
+
+        async function checkInitialState(userId) {
+            const activeTaskId = localStorage.getItem(`activeTaskId_${userId}`);
+            if (activeTaskId) {
+                statusEl.innerHTML = `Check-in ativo na tarefa <span class="font-bold">#${activeTaskId}</span>. A aguardar check-out.`;
+                statusEl.className = 'text-center bg-yellow-100 text-yellow-800 p-3 rounded-lg';
+                checkinBtn.disabled = true;
+                checkoutBtn.disabled = false;
+                visitDetailsForm.classList.remove('hidden');
+            } else {
+                 checkinBtn.disabled = false;
+                 checkoutBtn.disabled = true;
+                 visitDetailsForm.classList.add('hidden');
+            }
+        }
+        
+        function startNewVisit() {
+            concludedScreen.classList.add('hidden');
+            mainApp.classList.remove('hidden');
+            manualAddressContainer.classList.add('hidden');
+            
+            trackedPosition = null;
+            manualPosition = null;
+            
+            checkinBtn.disabled = true;
+            checkoutBtn.disabled = true;
+            placesSuggestionsContainer.classList.add('hidden');
+            placesSuggestions.innerHTML = '';
+            
+            visitDetailsForm.classList.add('hidden');
+            document.getElementById('establishment-name').value = '';
+            document.getElementById('contact-type').value = 'Chef de Cozinha';
+            document.getElementById('contact-name').value = '';
+            document.getElementById('contact-phone').value = '';
+            document.getElementById('contact-email').value = '';
+
+            startGeolocation();
+        }
+
+        // --- Funções de Login ---
+        async function handleLogin() {
+            const email = userEmailInput.value.trim();
+            if (!email) {
+                loginStatus.innerHTML = `<p class="text-red-600">Por favor, preencha o seu e-mail.</p>`;
+                return;
+            }
+
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'A verificar...';
+            loginStatus.innerHTML = `<p class="text-blue-600">A procurar utilizador...</p>`;
+            
+            const apiUrl = `${WEBHOOK_BASE_URL}user.get.json?FILTER[EMAIL]=${encodeURIComponent(email)}`;
+
+            try {
+                const response = await fetch(apiUrl);
+                const data = await response.json();
+
+                if (!response.ok) throw new Error(data?.error_description || `Falha na API (Status: ${response.status})`);
+                if (data.error) throw new Error(data.error_description || 'Erro retornado pela API do Bitrix.');
+
+                if (data.result && data.result.length > 0) {
+                    const userId = data.result[0].ID;
+                    userIdInput.value = userId;
+                    
+                    loginScreen.classList.add('hidden');
+                    mainApp.classList.remove('hidden');
+                    
+                    updateClock();
+                    clockInterval = setInterval(updateClock, 1000);
+                    startGeolocation();
+                } else {
+                    throw new Error('E-mail não encontrado no Bitrix24.');
+                }
+            } catch (error) {
+                loginStatus.innerHTML = `<p class="text-red-600 font-semibold">Erro:</p><p class="text-red-600">${error.message}</p>`;
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Entrar';
+            }
+        }
+
+        // --- Funções de Geolocalização e Mapa ---
+        function stopWatchingPosition(message) {
+            if (watchId) navigator.geolocation.clearWatch(watchId);
+            if (locationTimeout) clearTimeout(locationTimeout);
+            watchId = null;
+            locationTimeout = null;
+            
+            if (bestAccuracy <= 50) {
+                statusEl.textContent = message || `Localização obtida com precisão de ${bestAccuracy.toFixed(0)}m. Pronto para registo.`;
+                statusEl.className = 'text-center bg-green-100 text-green-700 p-3 rounded-lg';
+                checkInitialState(userIdInput.value);
+            } else {
+                statusEl.innerHTML = `A precisão obtida (${bestAccuracy.toFixed(0)}m) é insuficiente.<br>Por favor, insira o seu endereço.`;
+                statusEl.className = 'text-center bg-yellow-100 text-yellow-800 p-3 rounded-lg';
+                manualAddressContainer.classList.remove('hidden');
+                if (currentPosition) trackedPosition = { ...currentPosition };
+            }
+
+            if (googleMapsApiLoaded && currentPosition) {
+                fetchNearbyPlaces(currentPosition.latitude, currentPosition.longitude);
+            }
+        }
+
+        function startGeolocation() {
+            bestAccuracy = Infinity;
+            trackedPosition = null;
+            manualPosition = null;
+            statusEl.textContent = 'A obter localização precisa. Por favor, aguarde...';
+            statusEl.className = 'text-center bg-blue-100 text-blue-700 p-3 rounded-lg';
+
+            if ('geolocation' in navigator) {
+                watchId = navigator.geolocation.watchPosition(handleLocationSuccess, handleLocationError, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+                locationTimeout = setTimeout(() => {
+                    if (watchId) stopWatchingPosition('Tempo esgotado. A usar a melhor precisão obtida.');
+                }, 15000);
+            } else {
+                statusEl.textContent = 'A geolocalização não é suportada neste navegador.';
+                statusEl.className = 'text-center bg-red-100 text-red-700 p-3 rounded-lg';
+            }
+        }
+        
+        function handleLocationSuccess(position) {
+            const accuracy = position.coords.accuracy;
+            
+            if (accuracy > 500) {
+                statusEl.innerHTML = `A refinar localização...<br><span class="font-bold text-red-600">Precisão atual muito baixa (${accuracy.toFixed(0)}m). Use um dispositivo móvel.</span>`;
+            } else {
+                statusEl.textContent = `A refinar localização... Precisão: ${accuracy.toFixed(0)} metros.`;
+            }
+            
+            if (accuracy < bestAccuracy) {
+                bestAccuracy = accuracy;
+                currentPosition = { latitude: position.coords.latitude, longitude: position.coords.longitude };
+                updateMapDisplay(currentPosition, accuracy);
+            }
+
+            if (accuracy <= 50) stopWatchingPosition();
+        }
+        
+        function updateMapDisplay(pos, accuracy) {
+            latitudeEl.textContent = pos.latitude.toFixed(6);
+            longitudeEl.textContent = pos.longitude.toFixed(6);
+            mapContainer.classList.remove('hidden');
+            document.getElementById('coords-container').classList.remove('hidden');
+
+            const googleLatLng = new google.maps.LatLng(pos.latitude, pos.longitude);
+
+            if (!map) {
+                map = new google.maps.Map(document.getElementById('map'), { center: googleLatLng, zoom: 17, mapTypeId: 'roadmap', disableDefaultUI: true });
+                marker = new google.maps.Marker({ position: googleLatLng, map: map, title: 'Você está aqui!' });
+                accuracyCircle = new google.maps.Circle({
+                    strokeColor: '#1d4ed8', strokeOpacity: 0.8, strokeWeight: 2,
+                    fillColor: '#3b82f6', fillOpacity: 0.2,
+                    map: map, center: googleLatLng, radius: accuracy
+                });
+            } else {
+                map.setCenter(googleLatLng);
+                marker.setPosition(googleLatLng);
+                accuracyCircle.setCenter(googleLatLng);
+                accuracyCircle.setRadius(accuracy);
+            }
+        }
+
+        function handleLocationError(error) {
+            stopWatchingPosition();
+            let message = 'Ocorreu um erro ao obter a localização.';
+            if (error.code === 1) message = "Você negou o pedido de Geolocalização.";
+            if (error.code === 2) message = "A informação de localização não está disponível.";
+            if (error.code === 3) message = "O pedido para obter a localização do utilizador expirou.";
+            statusEl.textContent = message;
+            statusEl.className = 'text-center bg-red-100 text-red-700 p-3 rounded-lg';
+        }
+
+        async function handleConfirmAddress() {
+            const address = document.getElementById('manual-address').value;
+            if (!address) { alert("Por favor, insira um endereço."); return; }
+
+            confirmAddressBtn.disabled = true;
+            confirmAddressBtn.textContent = "A procurar...";
+            
+            const geocoder = new google.maps.Geocoder();
+            geocoder.geocode({ 'address': address }, (results, status) => {
+                if (status === 'OK') {
+                    const location = results[0].geometry.location;
+                    manualPosition = { latitude: location.lat(), longitude: location.lng() };
+                    currentPosition = { ...manualPosition }; // A posição manual torna-se a posição principal
+                    
+                    statusEl.textContent = 'Endereço confirmado! Pronto para registo.';
+                    statusEl.className = 'text-center bg-green-100 text-green-700 p-3 rounded-lg';
+                    
+                    updateMapDisplay(currentPosition, 50); // Mostra o novo ponto no mapa com uma precisão assumida
+                    manualAddressContainer.classList.add('hidden');
+                    fetchNearbyPlaces(currentPosition.latitude, currentPosition.longitude);
+                    checkInitialState(userIdInput.value);
+                } else {
+                    alert("Não foi possível encontrar o endereço. Tente novamente. Erro: " + status);
+                }
+                confirmAddressBtn.disabled = false;
+                confirmAddressBtn.textContent = "Confirmar Endereço";
+            });
+        }
+        
+        function calculateDistance(pos1, pos2) {
+            if (!pos1 || !pos2) return 0;
+            const R = 6371e3; // Metros
+            const φ1 = pos1.latitude * Math.PI/180;
+            const φ2 = pos2.latitude * Math.PI/180;
+            const Δφ = (pos2.latitude-pos1.latitude) * Math.PI/180;
+            const Δλ = (pos2.longitude-pos1.longitude) * Math.PI/180;
+
+            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                      Math.cos(φ1) * Math.cos(φ2) *
+                      Math.sin(Δλ/2) * Math.sin(Δλ/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return (R * c).toFixed(0); // Distância em metros
+        }
+
+        function fetchNearbyPlaces(lat, lng) {
+            const service = new google.maps.places.PlacesService(document.createElement('div'));
+            const request = {
+                location: new google.maps.LatLng(lat, lng),
+                radius: '200', 
+                types: ['restaurant', 'cafe', 'bar', 'store', 'food']
+            };
+            service.nearbySearch(request, (results, status) => {
+                placesSuggestions.innerHTML = '';
+                if (status === google.maps.places.PlacesServiceStatus.OK && results) {
+                    placesSuggestionsContainer.classList.remove('hidden');
+                    results.slice(0, 5).forEach(place => {
+                        const button = document.createElement('button');
+                        button.textContent = place.name;
+                        button.className = 'w-full text-left p-2 border rounded-lg hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
+                        button.onclick = () => {
+                            document.getElementById('establishment-name').value = place.name;
+                            placesSuggestionsContainer.classList.add('hidden');
+                        };
+                        placesSuggestions.appendChild(button);
+                    });
+                } else {
+                    placesSuggestionsContainer.classList.add('hidden');
+                    console.log('Nenhum local próximo encontrado:', status);
+                }
+            });
+        }
+        
+        async function handleCheckIn() {
+            const userId = userIdInput.value;
+            if (!currentPosition) {
+                statusEl.textContent = 'Localização não definida. Insira o endereço ou tente obter o sinal de GPS novamente.';
+                statusEl.className = 'text-center bg-red-100 text-red-700 p-3 rounded-lg';
+                return;
+            }
+
+            checkinBtn.disabled = true;
+            checkoutBtn.disabled = true;
+            statusEl.textContent = `A registar Check-in...`;
+            
+            const visitCount = getVisitCounter(userId);
+            const taskTitle = `Registro de Visita: ${getMonthName()} - nº ${visitCount} (Aguardando Check-out)`;
+            
+            let checkinDescription = `--- CHECK-IN ---\nData/Hora: ${new Date().toLocaleString('pt-BR')}\n`;
+            if (manualPosition) {
+                checkinDescription += `Localização Informada (Endereço): https://www.google.com/maps?q=${manualPosition.latitude},${manualPosition.longitude}\n`;
+                if(trackedPosition) {
+                    const distance = calculateDistance(manualPosition, trackedPosition);
+                    checkinDescription += `Localização Rastreada (GPS): https://www.google.com/maps?q=${trackedPosition.latitude},${trackedPosition.longitude}\n`;
+                    checkinDescription += `Distância (Auditoria): ${distance} metros\n`;
+                }
+            } else {
+                checkinDescription += `Localização: https://www.google.com/maps?q=${currentPosition.latitude},${currentPosition.longitude}\n`;
+                checkinDescription += `Precisão: ${bestAccuracy.toFixed(0)} metros`;
+            }
+
+            try {
+                const apiUrl = `${WEBHOOK_BASE_URL}tasks.task.add.json`;
+                const payload = { 'fields': { 'TITLE': taskTitle, 'DESCRIPTION': checkinDescription, 'RESPONSIBLE_ID': userId, 'CREATED_BY': userId } };
+                const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error_description || 'Erro desconhecido ao criar tarefa.');
+                
+                const taskId = result.result.task.id;
+                
+                localStorage.setItem(`taskInfo_${taskId}`, JSON.stringify({ visitCount: visitCount }));
+                localStorage.setItem(`activeTaskId_${userId}`, taskId);
+                statusEl.innerHTML = `Check-in registado na tarefa <span class="font-bold">#${taskId}</span>. Preencha os detalhes abaixo.`;
+                statusEl.className = 'text-center bg-green-100 text-green-700 p-3 rounded-lg';
+                checkoutBtn.disabled = false;
+                visitDetailsForm.classList.remove('hidden');
+            } catch (error) {
+                statusEl.textContent = `Erro no Check-in: ${error.message}`;
+                checkinBtn.disabled = false;
+            }
+        }
+        
+        async function findDuplicateCrmEntries(name, phone) {
+            if (!name && !phone) return ''; 
+
+            const domainMatch = WEBHOOK_BASE_URL.match(/https?:\/\/[^/]+/);
+            if (!domainMatch) return '';
+            const domain = domainMatch[0];
+
+            const createUrl = (entity, id) => `${domain}/crm/${entity}/details/${id}/`;
+            const searches = [];
+
+            if (phone) {
+                searches.push(fetch(`${WEBHOOK_BASE_URL}crm.contact.list.json?FILTER[PHONE]=${encodeURIComponent(phone)}`).then(res => res.json()));
+                searches.push(fetch(`${WEBHOOK_BASE_URL}crm.company.list.json?FILTER[PHONE]=${encodeURIComponent(phone)}`).then(res => res.json()));
+                searches.push(fetch(`${WEBHOOK_BASE_URL}crm.lead.list.json?FILTER[PHONE]=${encodeURIComponent(phone)}`).then(res => res.json()));
+            }
+            if (name) {
+                searches.push(fetch(`${WEBHOOK_BASE_URL}crm.contact.list.json?FILTER[NAME]=${encodeURIComponent(name)}`).then(res => res.json()));
+                searches.push(fetch(`${WEBHOOK_BASE_URL}crm.company.list.json?FILTER[TITLE]=${encodeURIComponent(name)}`).then(res => res.json()));
+                searches.push(fetch(`${WEBHOOK_BASE_URL}crm.lead.list.json?FILTER[TITLE]=${encodeURIComponent(name)}`).then(res => res.json()));
+            }
+
+            try {
+                const results = await Promise.all(searches);
+                const foundEntries = new Map();
+
+                const processResults = (data, entity, entityName) => {
+                    if (data && data.result && Array.isArray(data.result) && data.result.length > 0) {
+                        data.result.forEach(item => {
+                            const link = createUrl(entity, item.ID);
+                            if (!foundEntries.has(link)) {
+                                foundEntries.set(link, `${entityName}: ${link}`);
+                            }
+                        });
+                    }
+                };
+                
+                let resultIndex = 0;
+                if (phone) {
+                    processResults(results[resultIndex++], 'contact', 'Contato');
+                    processResults(results[resultIndex++], 'company', 'Empresa');
+                    processResults(results[resultIndex++], 'lead', 'Lead');
+                }
+                if (name) {
+                    processResults(results[resultIndex++], 'contact', 'Contato');
+                    processResults(results[resultIndex++], 'company', 'Empresa');
+                    processResults(results[resultIndex++], 'lead', 'Lead');
+                }
+
+                if (foundEntries.size === 0) return '';
+                
+                let resultString = '\n\n--- INFORMAÇÕES SEMELHANTES ENCONTRADAS ---\n';
+                resultString += Array.from(foundEntries.values()).join('\n');
+                return resultString;
+
+            } catch (error) {
+                console.error("Erro ao verificar duplicados no CRM:", error);
+                return '\n\n--- AVISO: Falha ao verificar duplicados no CRM ---';
+            }
+        }
+
+        async function handleCheckOut() {
+            const userId = userIdInput.value;
+            const taskId = localStorage.getItem(`activeTaskId_${userId}`);
+
+            if (!taskId) { 
+                statusEl.textContent = 'Erro: Nenhuma tarefa de check-in ativa encontrada.';
+                statusEl.className = 'text-center bg-red-100 text-red-700 p-3 rounded-lg';
+                return;
+            }
+            if (!currentPosition) {
+                statusEl.textContent = 'Localização não definida.';
+                statusEl.className = 'text-center bg-red-100 text-red-700 p-3 rounded-lg';
+                return;
+            }
+
+            checkinBtn.disabled = true;
+            checkoutBtn.disabled = true;
+            statusEl.textContent = `A registar Check-out e a verificar duplicados...`;
+
+            try {
+                const getTaskUrl = `${WEBHOOK_BASE_URL}tasks.task.get.json?taskId=${taskId}`;
+                const getResponse = await fetch(getTaskUrl);
+                const taskData = await getResponse.json();
+                if (!getResponse.ok) throw new Error(taskData.error_description || 'Não foi possível encontrar a tarefa de check-in.');
+                const originalDescription = taskData.result.task.description || "";
+
+                const establishmentName = document.getElementById('establishment-name').value.trim();
+                const contactType = document.getElementById('contact-type').value.trim();
+                const contactName = document.getElementById('contact-name').value.trim();
+                const contactPhone = document.getElementById('contact-phone').value.trim();
+                const contactEmail = document.getElementById('contact-email').value.trim();
+                
+                let finalTaskTitle = '';
+                const taskInfo = JSON.parse(localStorage.getItem(`taskInfo_${taskId}`));
+                if (establishmentName && taskInfo) {
+                    const overallVisitCount = taskInfo.visitCount;
+                    const returnCount = getEstablishmentReturnCounter(userId, establishmentName);
+                    finalTaskTitle = `Registro de Visita: ${getMonthName()} - ${establishmentName} - visita nº ${overallVisitCount} - ${returnCount}º retorno no mês`;
+                }
+
+                const duplicateInfo = await findDuplicateCrmEntries(establishmentName, contactPhone);
+
+                const visitDetailsDescription = `\n\n--- DETALHES DA VISITA ---\n` +
+                    `Nome do Estabelecimento: ${establishmentName || 'Não preenchido'}\n` +
+                    `Tipo de Contato: ${contactType || 'Não preenchido'}\n` +
+                    `Nome do Contato: ${contactName || 'Não preenchido'}\n` +
+                    `Telefone do Contato: ${contactPhone || 'Não preenchido'}\n` +
+                    `E-mail do Contato: ${contactEmail || 'Não preenchido'}`;
+                
+                let checkoutDescription = `\n\n--- CHECK-OUT ---\nData/Hora: ${new Date().toLocaleString('pt-BR')}\n`;
+                 if (manualPosition) {
+                    checkoutDescription += `Localização Informada (Endereço): https://www.google.com/maps?q=${manualPosition.latitude},${manualPosition.longitude}\n`;
+                    if(trackedPosition) {
+                        const distance = calculateDistance(manualPosition, trackedPosition);
+                        checkoutDescription += `Localização Rastreada (GPS): https://www.google.com/maps?q=${trackedPosition.latitude},${trackedPosition.longitude}\n`;
+                        checkoutDescription += `Distância (Auditoria): ${distance} metros\n`;
+                    }
+                } else {
+                    checkoutDescription += `Localização: https://www.google.com/maps?q=${currentPosition.latitude},${currentPosition.longitude}\n`;
+                    checkoutDescription += `Precisão: ${bestAccuracy.toFixed(0)} metros`;
+                }
+                
+                const updatedDescription = originalDescription + visitDetailsDescription + checkoutDescription + duplicateInfo;
+                
+                const updateTaskUrl = `${WEBHOOK_BASE_URL}tasks.task.update.json`;
+                const payload = { taskId: taskId, fields: { 'DESCRIPTION': updatedDescription } };
+
+                if (finalTaskTitle) payload.fields.TITLE = finalTaskTitle;
+                
+                const updateResponse = await fetch(updateTaskUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const updateResult = await updateResponse.json();
+                if (!updateResponse.ok) throw new Error(updateResult.error_description || 'Erro desconhecido ao atualizar tarefa.');
+
+                localStorage.removeItem(`activeTaskId_${userId}`);
+                localStorage.removeItem(`taskInfo_${taskId}`);
+                mainApp.classList.add('hidden');
+                concludedScreen.classList.remove('hidden');
+
+            } catch (error) {
+                statusEl.textContent = `Erro no Check-out: ${error.message}`;
+                checkoutBtn.disabled = false;
+                checkinBtn.disabled = true;
+            }
+        }
+        
+        // --- Event Listeners ---
+        loginBtn.addEventListener('click', handleLogin);
+        checkinBtn.addEventListener('click', handleCheckIn);
+        checkoutBtn.addEventListener('click', handleCheckOut);
+        newVisitBtn.addEventListener('click', startNewVisit);
+        confirmAddressBtn.addEventListener('click', handleConfirmAddress);
+
+        // --- Inicialização ---
+        loadGoogleMapsAPI();
+    </script>
+</body>
+</html>
+
